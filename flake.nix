@@ -19,7 +19,7 @@
           pkgs = pkgsFor system;
         in {
           default = pkgs.rustPlatform.buildRustPackage rec {
-            pname = "confetti";
+            pname = "tadaa";
             version = "0.1.0";
 
             src = pkgs.lib.cleanSource ./.;

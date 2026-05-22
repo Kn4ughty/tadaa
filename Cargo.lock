@@ -245,20 +245,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "confetti"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "env_logger",
- "pollster",
- "rand",
- "raw-window-handle",
- "smithay-client-toolkit",
- "wayland-client",
- "wgpu",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1248,6 +1234,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tadaa"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "env_logger",
+ "pollster",
+ "rand",
+ "raw-window-handle",
+ "smithay-client-toolkit",
+ "wayland-client",
+ "wgpu",
 ]
 
 [[package]]
