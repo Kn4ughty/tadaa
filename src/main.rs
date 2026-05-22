@@ -235,6 +235,8 @@ fn main() {
         render_pipeline,
     };
 
+    let time_of_program_start = Instant::now();
+
     let mut last_frame_time = Instant::now();
     // Target 60 fps.
     let frame_delay = Duration::from_secs_f32(1.0 / 60.0);
@@ -243,8 +245,8 @@ fn main() {
     loop {
         event_queue.dispatch_pending(&mut wgpu).unwrap();
 
-        if wgpu.exit {
-            println!("exiting example");
+        if wgpu.exit || time_of_program_start.elapsed() > Duration::from_secs(3) {
+            println!("Exiting..");
             break;
         }
 
