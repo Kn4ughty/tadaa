@@ -173,20 +173,13 @@ fn main() {
             position: [0.5, -0.5],
             colour: [0.0, 0.0, 1.0],
         }, // Bottom Right (Blue)
-        //
         Vertex {
             position: [-1.0, -1.0],
-            colour: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            position: [1.0, 1.0],
-            colour: [1.0, 1.0, 1.0],
-        },
-        Vertex {
-            position: [0.5, -0.5],
-            colour: [1.0, 1.0, 1.0],
+            colour: [1.0, 0.0, 1.0],
         },
     ];
+
+    let indices: Vec<u16> = vec![0, 2, 1, 1, 2, 3];
 
     // Create a buffer that is writable from the CPU (COPY_DST)
     use wgpu::util::DeviceExt;
@@ -195,6 +188,13 @@ fn main() {
         contents: bytemuck::cast_slice(&vertices),
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
     });
+
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Index Buffer"),
+        contents: bytemuck::cast_slice(&indices),
+        usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+    });
+    let num_indicies = indices.len() as u32;
 
     let mut wgpu = Wgpu {
         registry_state: RegistryState::new(&globals),
@@ -210,9 +210,14 @@ fn main() {
         adapter,
         queue,
 
-        render_pipeline,
         vertices,
         vertex_buffer,
+
+        indices,
+        num_indicies,
+        index_buffer,
+
+        render_pipeline,
     };
 
     // We don't draw immediately, the configure will notify us when to first draw.
@@ -297,9 +302,14 @@ struct Wgpu {
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
 
-    render_pipeline: wgpu::RenderPipeline,
     vertices: Vec<Vertex>,
     vertex_buffer: wgpu::Buffer,
+
+    indices: Vec<u16>, // No more than 65,000 verticies. Seems reasonable for now
+    index_buffer: wgpu::Buffer,
+    num_indicies: u32,
+
+    render_pipeline: wgpu::RenderPipeline,
 }
 
 impl CompositorHandler for Wgpu {
@@ -462,7 +472,9 @@ impl LayerShellHandler for Wgpu {
             });
             renderpass.set_pipeline(&self.render_pipeline);
             renderpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            renderpass.draw(0..self.vertices.len() as u32, 0..1);
+            renderpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            renderpass.draw_indexed(0..self.num_indicies, 0, 0..1);
         }
 
         // Submit the command in the queue to execute
