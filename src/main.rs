@@ -20,6 +20,13 @@ use wayland_client::{
     protocol::{wl_output, wl_seat, wl_surface},
 };
 
+use std::time::{Duration, Instant};
+
+mod confetti;
+mod hsv_to_rgb;
+
+use confetti::{ConfettiPiece, Vertex};
+
 const SHADER_SOURCE: &str = include_str!("shader.wgsl");
 
 fn main() {
@@ -160,26 +167,29 @@ fn main() {
         multiview_mask: None,
     });
 
-    let vertices = vec![
-        Vertex {
-            position: [0.0, 0.5],
-            colour: [1.0, 0.0, 0.0],
-        }, // Top (Red)
-        Vertex {
-            position: [-0.5, -0.5],
-            colour: [0.0, 1.0, 0.0],
-        }, // Bottom Left (Green)
-        Vertex {
-            position: [0.5, -0.5],
-            colour: [0.0, 0.0, 1.0],
-        }, // Bottom Right (Blue)
-        Vertex {
-            position: [-1.0, -1.0],
-            colour: [1.0, 0.0, 1.0],
-        },
-    ];
+    let mut confetti = vec![ConfettiPiece {
+        colour: [1.0, 0.0, 0.0],
+        dimensions: [0.2, 0.1],
+        position: [0.0, 0.0],
+        velocity: [0.1, 0.5],
+    }];
 
-    let indices: Vec<u16> = vec![0, 2, 1, 1, 2, 3];
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    for conf in &confetti {
+        // cannot have more than 2^16 indicies
+        let offset: u16 = vertices.len().try_into().expect("Too many indicies!");
+
+        let (verts, idx) = conf.to_quad();
+        for v in verts {
+            vertices.push(v);
+        }
+
+        for i in idx {
+            indices.push(i + offset);
+        }
+    }
 
     // Create a buffer that is writable from the CPU (COPY_DST)
     use wgpu::util::DeviceExt;
@@ -214,55 +224,70 @@ fn main() {
         vertex_buffer,
 
         indices,
-        num_indicies,
+        num_indices: num_indicies,
         index_buffer,
 
         render_pipeline,
     };
 
+    let mut last_frame_time = Instant::now();
+    // Target 60 fps.
+    let frame_delay = Duration::from_secs_f32(1.0 / 60.0);
+
     // We don't draw immediately, the configure will notify us when to first draw.
     loop {
-        event_queue.blocking_dispatch(&mut wgpu).unwrap();
+        event_queue.dispatch_pending(&mut wgpu).unwrap();
 
         if wgpu.exit {
             println!("exiting example");
             break;
+        }
+
+        let now = Instant::now();
+        let mut dt = now.duration_since(last_frame_time).as_secs_f32();
+        // clamp dt to prevent massive jumps
+        if dt > 0.1 {
+            dt = 0.1
+        };
+        last_frame_time = now;
+
+        for conf in &mut confetti {
+            conf.step(dt)
+        }
+
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for conf in &confetti {
+            let offset: u16 = vertices.len().try_into().unwrap();
+            let (verts, idx) = conf.to_quad();
+
+            for v in verts {
+                vertices.push(v);
+            }
+            for i in idx {
+                indices.push(i + offset);
+            }
+        }
+
+        wgpu.queue
+            .write_buffer(&wgpu.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+
+        wgpu.queue
+            .write_buffer(&wgpu.index_buffer, 0, bytemuck::cast_slice(&indices));
+        wgpu.num_indices = indices.len() as u32;
+
+        wgpu.render();
+        let elapsed = now.elapsed();
+        println!("ft: {:?}", elapsed);
+        if elapsed < frame_delay {
+            std::thread::sleep(frame_delay - elapsed);
         }
     }
 
     // On exit we must destroy the surface before the window is destroyed.
     drop(wgpu.surface);
     drop(wgpu.window);
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 2],
-    colour: [f32; 3],
-}
-
-impl Vertex {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                // Attribite 0: position.
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                // Attribute 1: Colour
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -307,9 +332,58 @@ struct Wgpu {
 
     indices: Vec<u16>, // No more than 65,000 verticies. Seems reasonable for now
     index_buffer: wgpu::Buffer,
-    num_indicies: u32,
+    num_indices: u32,
 
     render_pipeline: wgpu::RenderPipeline,
+}
+
+impl Wgpu {
+    pub fn render(&self) {
+        let wgpu::CurrentSurfaceTexture::Success(surface_texture) =
+            self.surface.get_current_texture()
+        else {
+            panic!("need surface texture")
+        };
+
+        // .expect("failed to acquire next swapchain texture");
+        let texture_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                multiview_mask: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    depth_slice: None,
+                    view: &texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.2,
+                            g: 0.0,
+                            b: 0.2,
+                            a: 0.5,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            renderpass.set_pipeline(&self.render_pipeline);
+            renderpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            renderpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            renderpass.draw_indexed(0..self.num_indices, 0, 0..1);
+        }
+
+        // Submit the command in the queue to execute
+        self.queue.submit(Some(encoder.finish()));
+        surface_texture.present();
+    }
 }
 
 impl CompositorHandler for Wgpu {
@@ -409,13 +483,14 @@ impl LayerShellHandler for Wgpu {
         let (new_width, new_height) = configure.new_size;
         self.width = new_width;
         self.height = new_height;
-        // self.width = new_width.map_or(256, |v| v.get());
-        // self.height = new_height.map_or(256, |v| v.get());
 
         let adapter = &self.adapter;
         let surface = &self.surface;
-        let device = &self.device;
         let queue = &self.queue;
+
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
+        queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&self.indices));
+        self.num_indices = self.indices.len() as u32;
 
         let cap = surface.get_capabilities(adapter);
         let present_mode = if cap.present_modes.contains(&wgpu::PresentMode::Mailbox) {
@@ -435,51 +510,6 @@ impl LayerShellHandler for Wgpu {
         };
 
         surface.configure(&self.device, &surface_config);
-
-        // We don't plan to render much in this example, just clear the surface.
-        let wgpu::CurrentSurfaceTexture::Success(surface_texture) = surface.get_current_texture()
-        else {
-            panic!("need surface texture")
-        };
-
-        // .expect("failed to acquire next swapchain texture");
-        let texture_view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = device.create_command_encoder(&Default::default());
-        {
-            let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                multiview_mask: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    depth_slice: None,
-                    view: &texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.2,
-                            g: 0.0,
-                            b: 0.2,
-                            a: 0.5,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            renderpass.set_pipeline(&self.render_pipeline);
-            renderpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            renderpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
-            renderpass.draw_indexed(0..self.num_indicies, 0, 0..1);
-        }
-
-        // Submit the command in the queue to execute
-        queue.submit(Some(encoder.finish()));
-        surface_texture.present();
     }
 }
 
