@@ -164,7 +164,10 @@ fn main() {
             conservative: false,
         },
         depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState {
+            count: 4,
+            ..Default::default()
+        },
         cache: None,
         multiview_mask: None,
     });
@@ -233,6 +236,8 @@ fn main() {
         index_buffer,
 
         render_pipeline,
+
+        msaa_view: None,
     };
 
     let time_of_program_start = Instant::now();
@@ -340,6 +345,8 @@ struct Wgpu {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
 
+    msaa_view: Option<wgpu::TextureView>,
+
     render_pipeline: wgpu::RenderPipeline,
 }
 
@@ -356,6 +363,10 @@ impl Wgpu {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        let Some(ref msaa_view) = self.msaa_view else {
+            return;
+        };
+
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -363,8 +374,8 @@ impl Wgpu {
                 multiview_mask: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     depth_slice: None,
-                    view: &texture_view,
-                    resolve_target: None,
+                    view: msaa_view,
+                    resolve_target: Some(&texture_view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                         store: wgpu::StoreOp::Store,
@@ -482,6 +493,7 @@ impl LayerShellHandler for Wgpu {
         _serial: u32,
     ) {
         let (new_width, new_height) = configure.new_size;
+
         self.width = new_width;
         self.height = new_height;
 
@@ -511,6 +523,22 @@ impl LayerShellHandler for Wgpu {
         };
 
         surface.configure(&self.device, &surface_config);
+
+        let msaa_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("MSAA Texture"),
+            size: wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 4,
+            dimension: wgpu::TextureDimension::D2,
+            format: surface_config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        self.msaa_view = Some(msaa_texture.create_view(&wgpu::TextureViewDescriptor::default()));
     }
 }
 
