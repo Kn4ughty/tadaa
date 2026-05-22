@@ -286,7 +286,6 @@ fn main() {
 
         wgpu.render();
         let elapsed = now.elapsed();
-        println!("ft: {:?}", elapsed);
         if elapsed < frame_delay {
             std::thread::sleep(frame_delay - elapsed);
         }
