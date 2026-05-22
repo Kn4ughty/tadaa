@@ -20,12 +20,16 @@ use wayland_client::{
     protocol::{wl_output, wl_seat, wl_surface},
 };
 
+use rand::prelude::*;
+
 use std::time::{Duration, Instant};
 
 mod confetti;
 mod hsv_to_rgb;
 
 use confetti::{ConfettiPiece, Vertex};
+
+use crate::hsv_to_rgb::hsv_to_rgb;
 
 const SHADER_SOURCE: &str = include_str!("shader.wgsl");
 
@@ -167,12 +171,54 @@ fn main() {
         multiview_mask: None,
     });
 
-    let mut confetti = vec![ConfettiPiece {
-        colour: [1.0, 0.0, 0.0],
-        dimensions: [0.2, 0.1],
-        position: [0.0, 0.0],
-        velocity: [0.1, 0.5],
-    }];
+    let mut rng = rand::rng();
+
+    let conf_count = 100;
+
+    let mut confetti = Vec::with_capacity(conf_count);
+
+    for _ in 0..100 {
+        let hue = rng.random_range(0.0..360.0);
+        let col = hsv_to_rgb(hue, 1.0, 1.0);
+        let vx = rng.random_range(0.1..0.9);
+        let vy = rng.random_range(0.4..5.0);
+
+        let sway_fac = 0.3;
+        let sway_speed = rng.random_range(-sway_fac..sway_fac);
+
+        let rotation = rng.random_range(0.0..3.1415926);
+        let angular_velocity = rng.random_range(0.5..2.0);
+
+        confetti.push(ConfettiPiece {
+            colour: [
+                col.0 as f32 / 255.0,
+                col.1 as f32 / 255.0,
+                col.2 as f32 / 255.0,
+            ],
+            velocity: [vx, vy],
+            position: [-1.0, -1.0],
+            dimensions: [0.005, 0.01],
+            sway_speed,
+            time_alive: 0.0,
+            rotation,
+            angular_velocity,
+        });
+        // And repeat for other side
+        confetti.push(ConfettiPiece {
+            colour: [
+                col.0 as f32 / 255.0,
+                col.1 as f32 / 255.0,
+                col.2 as f32 / 255.0,
+            ],
+            velocity: [-vx, vy],
+            position: [1.0, -1.0],
+            dimensions: [0.005, 0.01],
+            sway_speed,
+            time_alive: 0.0,
+            rotation,
+            angular_velocity,
+        });
+    }
 
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
@@ -360,12 +406,7 @@ impl Wgpu {
                     view: &texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.2,
-                            g: 0.0,
-                            b: 0.2,
-                            a: 0.5,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                         store: wgpu::StoreOp::Store,
                     },
                 })],

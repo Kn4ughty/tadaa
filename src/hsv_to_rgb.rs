@@ -1,5 +1,4 @@
 /// Copied from https://docs.rs/hsv/latest/hsv/
-
 pub fn hsv_to_rgb(hue: f64, saturation: f64, value: f64) -> (u8, u8, u8) {
     fn is_between(value: f64, min: f64, max: f64) -> bool {
         min <= value && value < max

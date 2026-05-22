@@ -5,61 +5,71 @@ pub struct ConfettiPiece {
     pub dimensions: [f32; 2],
     pub colour: [f32; 3],
     pub velocity: [f32; 2],
+
+    pub time_alive: f32,
+    pub sway_speed: f32,
+
+    /// in radians
+    pub rotation: f32,
+    pub angular_velocity: f32,
 }
 
 impl ConfettiPiece {
     pub fn step(&mut self, dt: f32) {
-        self.position[0] += self.velocity[0] * dt;
-        self.position[1] += self.velocity[1] * dt;
+        self.time_alive += dt;
+
+        self.rotation += self.angular_velocity * dt; // Drag this too?
+
+        let drag_coefficnet = 1.5;
+        self.velocity[0] -= self.velocity[0] * drag_coefficnet * dt;
+        self.velocity[1] -= self.velocity[1] * drag_coefficnet * dt;
 
         // Gravity
-        self.velocity[1] -= 1.9 * dt;
+        self.velocity[1] -= 2.8 * dt;
 
-        // todo air resistance.
+        let sway = f32::sin(self.time_alive * self.sway_speed) * 0.5;
+
+        self.position[0] += (self.velocity[0] + sway) * dt;
+        self.position[1] += self.velocity[1] * dt;
     }
 
     /// returns RELATIVE indidices. Add the current length of the vertex buffer when using
     pub fn to_quad(&self) -> ([Vertex; 4], [u16; 6]) {
-        // 4 verticies.
-        // Then it needs 6 indicies, (two triangles)
-        let verts = [
-            // Top left
-            Vertex {
-                position: [
-                    self.position[0] - self.dimensions[0],
-                    self.position[1] + self.dimensions[1],
-                ],
-                colour: self.colour,
-            },
-            // Top right
-            Vertex {
-                position: [
-                    self.position[0] + self.dimensions[0],
-                    self.position[1] + self.dimensions[1],
-                ],
-                colour: self.colour,
-            },
-            // Bottom right
-            Vertex {
-                position: [
-                    self.position[0] + self.dimensions[0],
-                    self.position[1] - self.dimensions[1],
-                ],
-                colour: self.colour,
-            },
-            // Bottom left
-            Vertex {
-                position: [
-                    self.position[0] - self.dimensions[0],
-                    self.position[1] - self.dimensions[1],
-                ],
-                colour: self.colour,
-            },
+        let w = self.dimensions[0];
+        let h = self.dimensions[1];
+
+        #[rustfmt::skip]
+        let local_verts = [
+            [-w,  h], // top left
+            [ w,  h], // top right
+            [ w, -h], // bottom right
+            [-w, -h], // bottom left
         ];
+        let cos_r = f32::cos(self.rotation);
+        let sin_r = f32::sin(self.rotation);
+
+        let mut rotated_verts = [Vertex {
+            position: [0.0, 0.0],
+            colour: self.colour,
+        }; 4];
+
+        for i in 0..4 {
+            let lx = local_verts[i][0];
+            let ly = local_verts[i][1];
+
+            // Standard 2d rotation matrix
+            let rx = lx * cos_r - ly * sin_r;
+            let ry = lx * sin_r - ly * cos_r;
+
+            rotated_verts[i] = Vertex {
+                position: [self.position[0] + rx, self.position[1] + ry],
+                colour: self.colour,
+            }
+        }
 
         let indicies = [0, 3, 1, 1, 3, 2];
 
-        (verts, indicies)
+        (rotated_verts, indicies)
     }
 }
 
