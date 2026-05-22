@@ -3,7 +3,7 @@ use raw_window_handle::{
 };
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_registry,
+    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_seat,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
@@ -543,6 +543,12 @@ impl SeatHandler for Wgpu {
 }
 
 delegate_registry!(Wgpu);
+delegate_compositor!(Wgpu);
+delegate_output!(Wgpu);
+
+delegate_layer!(Wgpu);
+
+delegate_seat!(Wgpu);
 
 impl ProvidesRegistryState for Wgpu {
     fn registry(&mut self) -> &mut RegistryState {
@@ -550,5 +556,3 @@ impl ProvidesRegistryState for Wgpu {
     }
     registry_handlers![OutputState];
 }
-
-smithay_client_toolkit::delegate_dispatch2!(Wgpu);

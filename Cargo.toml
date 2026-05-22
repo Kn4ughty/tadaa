@@ -4,15 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-smithay-client-toolkit = {
-    git = "https://github.com/Smithay/client-toolkit",
-    rev = "70a21c022d20671f390ea1030256b7301dca5329",
-    features = [ "system" ]
-}
+smithay-client-toolkit = { version = "0.19.2" }
 wgpu = "29.0.3"
 env_logger = "0.11.10"
 raw-window-handle = "0.6.0"
-wayland-client = "0.31.14"
+wayland-client = {version = "0.31.14", features = ["system"] }
 pollster = "0.3.0"
 bytemuck = "1.25.0"
 rand = "0.10.1"
