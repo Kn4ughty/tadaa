@@ -1,3 +1,6 @@
+use crate::hsv_to_rgb;
+use rand::prelude::*;
+
 pub struct ConfettiPiece {
     /// Centerpoint
     pub position: [f32; 2],
@@ -15,6 +18,35 @@ pub struct ConfettiPiece {
 }
 
 impl ConfettiPiece {
+    pub fn new_random(spawn_pos: [f32; 2], x_mul: f32) -> Self {
+        let mut rng = rand::rng();
+
+        let hue = rng.random_range(0.0..360.0);
+        let col = hsv_to_rgb(hue, 1.0, 1.0);
+        let vx = rng.random_range(0.2..1.5);
+        let vy = rng.random_range(0.4..5.5);
+
+        let sway_fac = 0.3;
+        let sway_speed = rng.random_range(-sway_fac..sway_fac);
+
+        let rotation = rng.random_range(0.0..3.1415926);
+        let angular_velocity = rng.random_range(0.5..2.0);
+
+        ConfettiPiece {
+            colour: [
+                col.0 as f32 / 255.0,
+                col.1 as f32 / 255.0,
+                col.2 as f32 / 255.0,
+            ],
+            velocity: [vx * x_mul, vy],
+            position: spawn_pos,
+            dimensions: [0.005, 0.01],
+            sway_speed,
+            time_alive: 0.0,
+            rotation,
+            angular_velocity,
+        }
+    }
     pub fn step(&mut self, dt: f32) {
         self.time_alive += dt;
 
