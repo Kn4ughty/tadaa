@@ -20,6 +20,8 @@ use wayland_client::{
     protocol::{wl_output, wl_seat, wl_surface},
 };
 
+const SHADER_SOURCE: &str = include_str!("shader.wgsl");
+
 fn main() {
     env_logger::init();
 
@@ -112,6 +114,54 @@ fn main() {
     let (device, queue) = pollster::block_on(adapter.request_device(&Default::default()))
         .expect("Failed to request device");
 
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Shader"),
+        source: wgpu::ShaderSource::Wgsl(SHADER_SOURCE.into()),
+    });
+    let cap = surface.get_capabilities(&adapter);
+    let surface_format = cap.formats[0];
+    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Render Pipeline Layout"),
+        bind_group_layouts: &[],
+        immediate_size: 0,
+    });
+
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Render Pipeline"),
+        layout: Some(&render_pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING), // Essential for overlays!
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None, // No culling so we see it from both sides
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        cache: None,
+        multiview_mask: None,
+    });
+
+    // let render_pipeline_layout = device.create_render_pipeline(wgpu::RenderPipelineDescriptor);
+
     let mut wgpu = Wgpu {
         registry_state: RegistryState::new(&globals),
         seat_state: SeatState::new(&globals, &qh),
@@ -125,6 +175,7 @@ fn main() {
         surface,
         adapter,
         queue,
+        render_pipeline,
     };
 
     // We don't draw immediately, the configure will notify us when to first draw.
@@ -178,6 +229,8 @@ struct Wgpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
+
+    render_pipeline: wgpu::RenderPipeline,
 }
 
 impl CompositorHandler for Wgpu {
@@ -262,10 +315,6 @@ impl OutputHandler for Wgpu {
 }
 
 impl LayerShellHandler for Wgpu {
-    // fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
-    //     self.exit = true;
-    // }
-    //
     fn closed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _layer: &LayerSurface) {
         todo!()
     }
@@ -321,7 +370,7 @@ impl LayerShellHandler for Wgpu {
 
         let mut encoder = device.create_command_encoder(&Default::default());
         {
-            let _renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut renderpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 multiview_mask: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -342,6 +391,8 @@ impl LayerShellHandler for Wgpu {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            renderpass.set_pipeline(&self.render_pipeline);
+            renderpass.draw(0..3, 0..1);
         }
 
         // Submit the command in the queue to execute
