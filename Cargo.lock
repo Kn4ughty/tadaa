@@ -230,6 +230,7 @@ dependencies = [
 name = "confetti"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "env_logger",
  "pollster",
  "raw-window-handle",

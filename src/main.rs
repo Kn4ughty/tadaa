@@ -132,7 +132,7 @@ fn main() {
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
-            buffers: &[],
+            buffers: &[Vertex::desc()],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -160,7 +160,41 @@ fn main() {
         multiview_mask: None,
     });
 
-    // let render_pipeline_layout = device.create_render_pipeline(wgpu::RenderPipelineDescriptor);
+    let vertices = vec![
+        Vertex {
+            position: [0.0, 0.5],
+            colour: [1.0, 0.0, 0.0],
+        }, // Top (Red)
+        Vertex {
+            position: [-0.5, -0.5],
+            colour: [0.0, 1.0, 0.0],
+        }, // Bottom Left (Green)
+        Vertex {
+            position: [0.5, -0.5],
+            colour: [0.0, 0.0, 1.0],
+        }, // Bottom Right (Blue)
+        //
+        Vertex {
+            position: [-1.0, -1.0],
+            colour: [1.0, 1.0, 1.0],
+        },
+        Vertex {
+            position: [1.0, 1.0],
+            colour: [1.0, 1.0, 1.0],
+        },
+        Vertex {
+            position: [0.5, -0.5],
+            colour: [1.0, 1.0, 1.0],
+        },
+    ];
+
+    // Create a buffer that is writable from the CPU (COPY_DST)
+    use wgpu::util::DeviceExt;
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(&vertices),
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+    });
 
     let mut wgpu = Wgpu {
         registry_state: RegistryState::new(&globals),
@@ -175,7 +209,10 @@ fn main() {
         surface,
         adapter,
         queue,
+
         render_pipeline,
+        vertices,
+        vertex_buffer,
     };
 
     // We don't draw immediately, the configure will notify us when to first draw.
@@ -191,6 +228,36 @@ fn main() {
     // On exit we must destroy the surface before the window is destroyed.
     drop(wgpu.surface);
     drop(wgpu.window);
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 2],
+    colour: [f32; 3],
+}
+
+impl Vertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                // Attribite 0: position.
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                // Attribute 1: Colour
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -231,6 +298,8 @@ struct Wgpu {
     surface: wgpu::Surface<'static>,
 
     render_pipeline: wgpu::RenderPipeline,
+    vertices: Vec<Vertex>,
+    vertex_buffer: wgpu::Buffer,
 }
 
 impl CompositorHandler for Wgpu {
@@ -392,7 +461,8 @@ impl LayerShellHandler for Wgpu {
                 occlusion_query_set: None,
             });
             renderpass.set_pipeline(&self.render_pipeline);
-            renderpass.draw(0..3, 0..1);
+            renderpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            renderpass.draw(0..self.vertices.len() as u32, 0..1);
         }
 
         // Submit the command in the queue to execute
