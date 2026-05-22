@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0"
 description = "GPU rendered confetti overlay for wayland"
-keywords = ["confetti", "wgpu", "smithay-client-toolkit", "particles", "overlay", "wayland"]
+keywords = ["confetti", "wgpu", "particles", "overlay", "wayland"]
 repository = "https://github.com/Kn4ughty/tadaa"
 
 [dependencies]
