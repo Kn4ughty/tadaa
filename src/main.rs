@@ -10,10 +10,7 @@ use smithay_client_toolkit::{
     seat::{Capability, SeatHandler, SeatState},
     shell::{
         WaylandSurface,
-        xdg::{
-            XdgShell,
-            window::{Window, WindowConfigure, WindowDecorations, WindowHandler},
-        },
+        wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure},
     },
 };
 use std::ptr::NonNull;
@@ -36,16 +33,46 @@ fn main() {
     // Initialize xdg_shell handlers so we can select the correct adapter
     let compositor_state =
         CompositorState::bind(&globals, &qh).expect("wl_compositor not available");
-    let xdg_shell_state = XdgShell::bind(&globals, &qh).expect("xdg shell not available");
+
+    let layer_shell_state =
+        smithay_client_toolkit::shell::wlr_layer::LayerShell::bind(&globals, &qh)
+            .expect("Layer shell not available");
+
+    // let xdg_shell_state = XdgShell::bind(&globals, &qh).expect("xdg shell not available");
+    let output_state = OutputState::new(&globals, &qh);
+    let output = output_state
+        .outputs()
+        .next()
+        .expect("No wayland outputs found!");
 
     let surface = compositor_state.create_surface(&qh);
+    let wl_region = smithay_client_toolkit::compositor::Region::new(&compositor_state)
+        .expect("Cannot make region");
+
+    surface.set_input_region(Some(wl_region.wl_region()));
+
+    let layer_surface = layer_shell_state.create_layer_surface(
+        &qh,
+        surface,
+        smithay_client_toolkit::shell::wlr_layer::Layer::Overlay,
+        None::<String>,
+        Some(output).as_ref(),
+    );
+
+    use smithay_client_toolkit::shell::wlr_layer::Anchor;
+    layer_surface.set_anchor(Anchor::all());
+    layer_surface.set_keyboard_interactivity(
+        smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity::None,
+    );
+
     // Create the window for adapter selection
-    let window = xdg_shell_state.create_window(surface, WindowDecorations::ServerDefault, &qh);
-    window.set_title("wgpu wayland window");
-    // GitHub does not let projects use the `org.github` domain but the `io.github` domain is fine.
-    window.set_app_id("io.github.smithay.client-toolkit.WgpuExample");
-    window.set_min_size(Some((256, 256)));
-    window.commit();
+    // let window = xdg_shell_state.create_window(surface, WindowDecorations::ServerDefault, &qh);
+    // window.set_title("wgpu wayland window");
+    // // GitHub does not let projects use the `org.github` domain but the `io.github` domain is fine.
+    // window.set_app_id("io.github.smithay.client-toolkit.WgpuExample");
+    // window.set_min_size(Some((256, 256)));
+
+    layer_surface.commit();
 
     // Initialize wgpu
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -63,7 +90,7 @@ fn main() {
         NonNull::new(conn.backend().display_ptr() as *mut _).unwrap(),
     ));
     let raw_window_handle = RawWindowHandle::Wayland(WaylandWindowHandle::new(
-        NonNull::new(window.wl_surface().id().as_ptr() as *mut _).unwrap(),
+        NonNull::new(layer_surface.wl_surface().id().as_ptr() as *mut _).unwrap(),
     ));
 
     let surface = unsafe {
@@ -93,7 +120,7 @@ fn main() {
         exit: false,
         width: 256,
         height: 256,
-        window,
+        window: layer_surface,
         device,
         surface,
         adapter,
@@ -145,7 +172,7 @@ struct Wgpu {
     exit: bool,
     width: u32,
     height: u32,
-    window: Window,
+    window: LayerSurface,
 
     adapter: wgpu::Adapter,
     device: wgpu::Device,
@@ -234,22 +261,28 @@ impl OutputHandler for Wgpu {
     }
 }
 
-impl WindowHandler for Wgpu {
-    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
-        self.exit = true;
+impl LayerShellHandler for Wgpu {
+    // fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
+    //     self.exit = true;
+    // }
+    //
+    fn closed(&mut self, _conn: &Connection, _qh: &QueueHandle<Self>, _layer: &LayerSurface) {
+        todo!()
     }
 
     fn configure(
         &mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
-        _window: &Window,
-        configure: WindowConfigure,
+        _window: &LayerSurface,
+        configure: LayerSurfaceConfigure,
         _serial: u32,
     ) {
         let (new_width, new_height) = configure.new_size;
-        self.width = new_width.map_or(256, |v| v.get());
-        self.height = new_height.map_or(256, |v| v.get());
+        self.width = new_width;
+        self.height = new_height;
+        // self.width = new_width.map_or(256, |v| v.get());
+        // self.height = new_height.map_or(256, |v| v.get());
 
         let adapter = &self.adapter;
         let surface = &self.surface;
@@ -296,7 +329,12 @@ impl WindowHandler for Wgpu {
                     view: &texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.2,
+                            g: 0.0,
+                            b: 0.2,
+                            a: 0.5,
+                        }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
