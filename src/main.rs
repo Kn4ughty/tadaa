@@ -9,7 +9,10 @@ use smithay_client_toolkit::{
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
-    seat::{Capability, SeatHandler, SeatState, pointer::PointerHandler},
+    seat::{
+        Capability, SeatHandler, SeatState,
+        pointer::{PointerEventKind, PointerHandler},
+    },
     shell::{
         WaylandSurface,
         wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure},
@@ -39,6 +42,10 @@ struct Args {
     /// If no, mouse input is transparent, and all related options are ignored
     #[arg(short, long)]
     mouse_interactive: bool,
+
+    /// Draw a black indicator confetti of the current mouse position
+    #[arg(short, long)]
+    indicate_mouse_pos: bool,
 }
 
 fn main() {
@@ -286,6 +293,20 @@ fn main() {
             conf.step(dt, wgpu.pointer_position, args.mouse_interactive)
         }
 
+        if args.indicate_mouse_pos {
+            // println!("{:?}", wgpu.pointer_position);
+            confetti[0] = ConfettiPiece {
+                position: wgpu.pointer_position,
+                dimensions: [0.02, 0.02],
+                colour: [0.0, 0.0, 0.0],
+                velocity: [0.0, 0.0],
+                time_alive: 0.1,
+                sway_speed: 0.1,
+                rotation: 0.1,
+                angular_velocity: 0.1,
+            };
+        }
+
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
 
@@ -300,17 +321,6 @@ fn main() {
                 indices.push(i + offset);
             }
         }
-
-        // confetti[0] = ConfettiPiece {
-        //     position: wgpu.pointer_position,
-        //     dimensions: [0.01, 0.01],
-        //     colour: [0.0, 0.0, 0.0],
-        //     velocity: [0.0, 0.0],
-        //     time_alive: 0.1,
-        //     sway_speed: 0.1,
-        //     rotation: 0.1,
-        //     angular_velocity: 0.1,
-        // };
 
         wgpu.queue
             .write_buffer(&wgpu.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
@@ -624,15 +634,21 @@ impl PointerHandler for Wgpu {
         events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
     ) {
         for event in events.iter() {
-            // pointer position pixels x
-            let ppx = event.position.0 as f32;
-            let ppy = event.position.1 as f32;
+            if matches!(
+                event.kind,
+                PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. }
+            ) {
+                // pointer position pixels x
+                let ppx = event.position.0 as f32;
+                let ppy = event.position.1 as f32;
 
-            let ssx = ((ppx / self.width as f32) * 2.0) - 1.0;
-            let ssy = ((ppy / self.height as f32) * 2.0) - 1.0;
+                let ssx = ((ppx / self.width as f32) * 2.0) - 1.0;
+                let ssy = ((ppy / self.height as f32) * 2.0) - 1.0;
+                // println!("{:?}", ssx);
 
-            self.pointer_position[0] = ssx;
-            self.pointer_position[1] = -ssy;
+                self.pointer_position[0] = ssx;
+                self.pointer_position[1] = -ssy;
+            }
         }
     }
 }
