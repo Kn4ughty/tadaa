@@ -19,7 +19,6 @@ use smithay_client_toolkit::{
     },
 };
 use std::ptr::NonNull;
-use std::time::{Duration, Instant};
 use wayland_client::{
     Connection, Proxy, QueueHandle,
     globals::registry_queue_init,
@@ -29,7 +28,9 @@ use wayland_client::{
 mod confetti;
 mod hsv_to_rgb;
 
-use confetti::{ConfettiPiece, Vertex};
+mod sim;
+
+use crate::confetti::Vertex;
 
 use crate::hsv_to_rgb::hsv_to_rgb;
 
@@ -46,6 +47,10 @@ struct Args {
     /// Draw a black indicator confetti of the current mouse position
     #[arg(short, long)]
     indicate_mouse_pos: bool,
+
+    /// Amount of confetti
+    #[arg(short, long, default_value_t = 100)]
+    confetti_count: u32,
 }
 
 fn main() {
@@ -195,47 +200,19 @@ fn main() {
         multiview_mask: None,
     });
 
-    let conf_count = 100;
-
-    let mut confetti = Vec::with_capacity(conf_count);
-
-    for _ in 0..100 {
-        // And repeat for other side
-        confetti.push(ConfettiPiece::new_random([-1.0, -1.0], 1.0));
-        confetti.push(ConfettiPiece::new_random([1.0, -1.0], -1.0));
-    }
-
-    let mut vertices = Vec::new();
-    let mut indices = Vec::new();
-
-    for conf in &confetti {
-        // cannot have more than 2^16 indicies
-        let offset: u16 = vertices.len().try_into().expect("Too many indicies!");
-
-        let (verts, idx) = conf.to_quad();
-        for v in verts {
-            vertices.push(v);
-        }
-
-        for i in idx {
-            indices.push(i + offset);
-        }
-    }
-
     // Create a buffer that is writable from the CPU (COPY_DST)
     use wgpu::util::DeviceExt;
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Vertex Buffer"),
-        contents: bytemuck::cast_slice(&vertices),
+        contents: bytemuck::cast_slice(&Vec::<Vertex>::new()),
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
     });
 
     let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Index Buffer"),
-        contents: bytemuck::cast_slice(&indices),
+        contents: bytemuck::cast_slice(&Vec::<u16>::new()),
         usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
     });
-    let num_indicies = indices.len() as u32;
 
     let mut wgpu = Wgpu {
         registry_state: RegistryState::new(&globals),
@@ -251,11 +228,11 @@ fn main() {
         adapter,
         queue,
 
-        vertices,
+        vertices: Vec::new(),
         vertex_buffer,
 
-        indices,
-        num_indices: num_indicies,
+        indices: Vec::new(),
+        num_indices: args.confetti_count,
         index_buffer,
 
         render_pipeline,
@@ -266,75 +243,7 @@ fn main() {
         pointer_position: [0.0, 0.0],
     };
 
-    let time_of_program_start = Instant::now();
-
-    let mut last_frame_time = Instant::now();
-    // Target 60 fps.
-    let frame_delay = Duration::from_secs_f32(1.0 / 60.0);
-
-    // We don't draw immediately, the configure will notify us when to first draw.
-    loop {
-        event_queue.dispatch_pending(&mut wgpu).unwrap();
-
-        if wgpu.exit || time_of_program_start.elapsed() > Duration::from_secs(8) {
-            println!("Exiting..");
-            break;
-        }
-
-        let now = Instant::now();
-        let mut dt = now.duration_since(last_frame_time).as_secs_f32();
-        // clamp dt to prevent massive jumps
-        if dt > 0.1 {
-            dt = 0.1
-        };
-        last_frame_time = now;
-
-        for conf in &mut confetti {
-            conf.step(dt, wgpu.pointer_position, args.mouse_interactive)
-        }
-
-        if args.indicate_mouse_pos {
-            // println!("{:?}", wgpu.pointer_position);
-            confetti[0] = ConfettiPiece {
-                position: wgpu.pointer_position,
-                dimensions: [0.02, 0.02],
-                colour: [0.0, 0.0, 0.0],
-                velocity: [0.0, 0.0],
-                time_alive: 0.1,
-                sway_speed: 0.1,
-                rotation: 0.1,
-                angular_velocity: 0.1,
-            };
-        }
-
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-
-        for conf in &confetti {
-            let offset: u16 = vertices.len().try_into().unwrap();
-            let (verts, idx) = conf.to_quad();
-
-            for v in verts {
-                vertices.push(v);
-            }
-            for i in idx {
-                indices.push(i + offset);
-            }
-        }
-
-        wgpu.queue
-            .write_buffer(&wgpu.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
-
-        wgpu.queue
-            .write_buffer(&wgpu.index_buffer, 0, bytemuck::cast_slice(&indices));
-        wgpu.num_indices = indices.len() as u32;
-
-        wgpu.render();
-        let elapsed = now.elapsed();
-        if elapsed < frame_delay {
-            std::thread::sleep(frame_delay - elapsed);
-        }
-    }
+    sim::main_loop(args, &mut wgpu, &mut event_queue);
 
     // On exit we must destroy the surface before the window is destroyed.
     drop(wgpu.surface);
@@ -363,7 +272,7 @@ impl raw_window_handle::HasDisplayHandle for WaylandDisplayWrapper {
     }
 }
 
-struct Wgpu {
+pub struct Wgpu {
     registry_state: RegistryState,
     seat_state: SeatState,
     output_state: OutputState,
