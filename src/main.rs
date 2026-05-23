@@ -269,7 +269,7 @@ fn main() {
     loop {
         event_queue.dispatch_pending(&mut wgpu).unwrap();
 
-        if wgpu.exit || time_of_program_start.elapsed() > Duration::from_secs(3) {
+        if wgpu.exit || time_of_program_start.elapsed() > Duration::from_secs(8) {
             println!("Exiting..");
             break;
         }

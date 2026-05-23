@@ -62,7 +62,6 @@ impl ConfettiPiece {
                 // the force pushing away, is inversely propotional to the distance
                 // So if the cursor is close, the force is higher
                 // Also prevent black holes with max
-                println!("{:?}", dist);
                 let force = f32::max(0.05 / dist, 0.5);
                 let angle = f32::atan2(dy, dx);
                 let fx = force * f32::cos(angle);
@@ -85,6 +84,8 @@ impl ConfettiPiece {
 
         self.position[0] += (self.velocity[0] + sway) * dt;
         self.position[1] += self.velocity[1] * dt;
+
+        self.position[1] = self.position[1].max(-1.0 + self.dimensions[1]);
     }
 
     /// returns RELATIVE indidices. Add the current length of the vertex buffer when using
