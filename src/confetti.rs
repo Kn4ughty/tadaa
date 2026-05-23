@@ -62,7 +62,7 @@ impl ConfettiPiece {
                 // the force pushing away, is inversely propotional to the distance
                 // So if the cursor is close, the force is higher
                 // Also prevent black holes with max
-                let force = f32::max(0.05 / dist, 0.5);
+                let force = f32::max(0.05 / dist, 0.4);
                 let angle = f32::atan2(dy, dx);
                 let fx = force * f32::cos(angle);
                 let fy = force * f32::sin(angle);
@@ -79,8 +79,14 @@ impl ConfettiPiece {
         // Gravity
         self.velocity[1] -= 2.8 * dt;
 
-        // let sway = f32::sin(self.time_alive * self.sway_speed) * 0.5;
-        let sway = 0.0;
+        let sway = if self.position[1] > -0.9 {
+            f32::sin(self.time_alive * self.sway_speed) * 0.5
+        } else {
+            // we are touching ground, or very close to
+            let ground_drag = 2.0;
+            self.velocity[0] -= self.velocity[0] * ground_drag * dt;
+            0.0
+        };
 
         self.position[0] += (self.velocity[0] + sway) * dt;
         self.position[1] += self.velocity[1] * dt;
