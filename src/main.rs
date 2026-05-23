@@ -32,8 +32,6 @@ mod sim;
 
 use crate::confetti::Vertex;
 
-use crate::hsv_to_rgb::hsv_to_rgb;
-
 const SHADER_SOURCE: &str = include_str!("shader.wgsl");
 
 #[derive(Parser, Debug)]

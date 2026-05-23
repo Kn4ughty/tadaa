@@ -1,4 +1,4 @@
-use crate::hsv_to_rgb;
+use crate::hsv_to_rgb::hsv_to_rgb;
 use rand::prelude::*;
 
 pub struct ConfettiPiece {
