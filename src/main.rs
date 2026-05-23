@@ -1,26 +1,27 @@
+use clap::Parser;
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
 };
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_seat,
+    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
+    delegate_seat,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
-    seat::{Capability, SeatHandler, SeatState},
+    seat::{Capability, SeatHandler, SeatState, pointer::PointerHandler},
     shell::{
         WaylandSurface,
         wlr_layer::{LayerShellHandler, LayerSurface, LayerSurfaceConfigure},
     },
 };
 use std::ptr::NonNull;
+use std::time::{Duration, Instant};
 use wayland_client::{
     Connection, Proxy, QueueHandle,
     globals::registry_queue_init,
-    protocol::{wl_output, wl_seat, wl_surface},
+    protocol::{wl_output, wl_pointer, wl_seat, wl_surface},
 };
-
-use std::time::{Duration, Instant};
 
 mod confetti;
 mod hsv_to_rgb;
@@ -31,8 +32,20 @@ use crate::hsv_to_rgb::hsv_to_rgb;
 
 const SHADER_SOURCE: &str = include_str!("shader.wgsl");
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Should the program interact with the mouse?
+    /// If no, mouse input is transparent, and all related options are ignored
+    #[arg(short, long)]
+    mouse_interactive: bool,
+}
+
 fn main() {
     env_logger::init();
+    let args = Args::parse();
+
+    println!("{:#?}", args);
 
     let conn = Connection::connect_to_env().unwrap();
 
@@ -57,10 +70,13 @@ fn main() {
         .expect("No wayland outputs found!");
 
     let surface = compositor_state.create_surface(&qh);
-    let wl_region = smithay_client_toolkit::compositor::Region::new(&compositor_state)
-        .expect("Cannot make region");
 
-    surface.set_input_region(Some(wl_region.wl_region()));
+    if !args.mouse_interactive {
+        // Create an empty input region, so all inputs are transparent
+        let wl_region = smithay_client_toolkit::compositor::Region::new(&compositor_state)
+            .expect("Cannot make region");
+        surface.set_input_region(Some(wl_region.wl_region()));
+    }
 
     let layer_surface = layer_shell_state.create_layer_surface(
         &qh,
@@ -238,6 +254,9 @@ fn main() {
         render_pipeline,
 
         msaa_view: None,
+
+        pointer: None,
+        pointer_position: [0.0, 0.0],
     };
 
     let time_of_program_start = Instant::now();
@@ -264,7 +283,7 @@ fn main() {
         last_frame_time = now;
 
         for conf in &mut confetti {
-            conf.step(dt)
+            conf.step(dt, wgpu.pointer_position, args.mouse_interactive)
         }
 
         let mut vertices = Vec::new();
@@ -281,6 +300,17 @@ fn main() {
                 indices.push(i + offset);
             }
         }
+
+        // confetti[0] = ConfettiPiece {
+        //     position: wgpu.pointer_position,
+        //     dimensions: [0.01, 0.01],
+        //     colour: [0.0, 0.0, 0.0],
+        //     velocity: [0.0, 0.0],
+        //     time_alive: 0.1,
+        //     sway_speed: 0.1,
+        //     rotation: 0.1,
+        //     angular_velocity: 0.1,
+        // };
 
         wgpu.queue
             .write_buffer(&wgpu.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
@@ -348,6 +378,9 @@ struct Wgpu {
     msaa_view: Option<wgpu::TextureView>,
 
     render_pipeline: wgpu::RenderPipeline,
+
+    pointer: Option<wl_pointer::WlPointer>,
+    pointer_position: [f32; 2],
 }
 
 impl Wgpu {
@@ -552,10 +585,18 @@ impl SeatHandler for Wgpu {
     fn new_capability(
         &mut self,
         _conn: &Connection,
-        _qh: &QueueHandle<Self>,
-        _seat: wl_seat::WlSeat,
-        _capability: Capability,
+        qh: &QueueHandle<Self>,
+        seat: wl_seat::WlSeat,
+        capability: Capability,
     ) {
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            // println!("Set pointer capability");
+            let pointer = self
+                .seat_state
+                .get_pointer(qh, &seat)
+                .expect("Failed to create pointer");
+            self.pointer = Some(pointer);
+        }
     }
 
     fn remove_capability(
@@ -563,11 +604,37 @@ impl SeatHandler for Wgpu {
         _conn: &Connection,
         _: &QueueHandle<Self>,
         _: wl_seat::WlSeat,
-        _capability: Capability,
+        capability: Capability,
     ) {
+        if capability == Capability::Pointer && self.pointer.is_some() {
+            // println!("Unset pointer capability");
+            self.pointer.take().unwrap().release();
+        }
     }
 
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+}
+
+impl PointerHandler for Wgpu {
+    fn pointer_frame(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _pointer: &wl_pointer::WlPointer,
+        events: &[smithay_client_toolkit::seat::pointer::PointerEvent],
+    ) {
+        for event in events.iter() {
+            // pointer position pixels x
+            let ppx = event.position.0 as f32;
+            let ppy = event.position.1 as f32;
+
+            let ssx = ((ppx / self.width as f32) * 2.0) - 1.0;
+            let ssy = ((ppy / self.height as f32) * 2.0) - 1.0;
+
+            self.pointer_position[0] = ssx;
+            self.pointer_position[1] = -ssy;
+        }
+    }
 }
 
 delegate_registry!(Wgpu);
@@ -575,6 +642,7 @@ delegate_compositor!(Wgpu);
 delegate_output!(Wgpu);
 
 delegate_layer!(Wgpu);
+delegate_pointer!(Wgpu);
 
 delegate_seat!(Wgpu);
 

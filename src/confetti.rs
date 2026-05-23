@@ -47,11 +47,32 @@ impl ConfettiPiece {
             angular_velocity,
         }
     }
-    pub fn step(&mut self, dt: f32) {
+    pub fn step(&mut self, dt: f32, cursor_pos: [f32; 2], force_field: bool) {
         self.time_alive += dt;
 
         self.rotation += self.angular_velocity * dt; // Drag this too?
 
+        if force_field {
+            let dx = self.position[0] - cursor_pos[0];
+            let dy = self.position[1] - cursor_pos[1];
+            let dist = f32::sqrt(dx * dx + dy * dy);
+
+            if dist < 0.2 {
+                // Force field
+                // the force pushing away, is inversely propotional to the distance
+                // So if the cursor is close, the force is higher
+                // Also prevent black holes with max
+                println!("{:?}", dist);
+                let force = f32::max(0.05 / dist, 0.5);
+                let angle = f32::atan2(dy, dx);
+                let fx = force * f32::cos(angle);
+                let fy = force * f32::sin(angle);
+                self.velocity[0] += fx * 0.1;
+                self.velocity[1] += fy * 0.1;
+            }
+        }
+
+        // let drag_coefficnet = 1.5;
         let drag_coefficnet = 1.5;
         self.velocity[0] -= self.velocity[0] * drag_coefficnet * dt;
         self.velocity[1] -= self.velocity[1] * drag_coefficnet * dt;
@@ -59,7 +80,8 @@ impl ConfettiPiece {
         // Gravity
         self.velocity[1] -= 2.8 * dt;
 
-        let sway = f32::sin(self.time_alive * self.sway_speed) * 0.5;
+        // let sway = f32::sin(self.time_alive * self.sway_speed) * 0.5;
+        let sway = 0.0;
 
         self.position[0] += (self.velocity[0] + sway) * dt;
         self.position[1] += self.velocity[1] * dt;
