@@ -83,7 +83,15 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
         }
 
         if display_leafblower {
-            leafblower.step(dt, wgpu.pointer_position)
+            leafblower.step(dt, wgpu.pointer_position);
+            for conf in &mut confetti {
+                conf.blow(
+                    leafblower.position,
+                    leafblower.angle + std::f32::consts::PI,
+                    0.5,
+                    std::f32::consts::PI / 12.0, // 15 deg cone
+                );
+            }
         }
 
         if args.indicate_mouse_pos {

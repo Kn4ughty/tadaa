@@ -94,6 +94,39 @@ impl ConfettiPiece {
         self.position[1] = self.position[1].max(-1.0 + self.dimensions[1]);
     }
 
+    /// apply leafblower
+    pub fn blow(&mut self, origin: [f32; 2], angle: f32, strength: f32, cone_half_angle: f32) {
+        let dx = self.position[0] - origin[0];
+        let dy = self.position[1] - origin[1];
+        let dist_sq = dx * dx + dy * dy;
+
+        // if dist_sq > 2.0 {
+        //     return;
+        // }
+        // self.colour = [1.0, 0.0, 1.0];
+
+        let angle_to_peice = f32::atan2(dy, dx);
+
+        let angle_dif = {
+            let d = angle_to_peice - angle;
+            // wrap to -pi to pi
+            // Surely this can be done faster without using trig
+            f32::atan2(f32::sin(d), f32::cos(d))
+        };
+
+        if angle_dif.abs() > cone_half_angle {
+            return;
+        }
+
+        let dist = f32::sqrt(dist_sq).max(0.01);
+        let dist_falloff = 1.0 / dist;
+        let angle_falloff = 1.0 - (angle_dif.abs() / cone_half_angle);
+        let force = strength * dist_falloff * angle_falloff;
+
+        self.velocity[0] += f32::cos(angle) * force;
+        self.velocity[1] += f32::sin(angle) * force;
+    }
+
     /// returns RELATIVE indidices. Add the current length of the vertex buffer when using
     pub fn to_quad(&self) -> ([Vertex; 4], [u16; 6]) {
         let w = self.dimensions[0];
