@@ -1,6 +1,8 @@
 use super::{MouseButton, Wgpu};
 use crate::Vertex;
 
+static BLOWER_SFX: &[u8] = include_bytes!("../assets/blower.ogg");
+
 use std::time::{Duration, Instant};
 use wayland_client::EventQueue;
 
@@ -23,11 +25,21 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
     // Target 60 fps.
     let frame_delay = Duration::from_secs_f32(1.0 / 60.0);
 
+    let mut sink_handle =
+        rodio::DeviceSinkBuilder::open_default_sink().expect("Open default audio stream");
+    sink_handle.log_on_drop(false);
+
+    let cursor = std::io::Cursor::new(SOUND_BYTES);
+    #[allow(unused)]
+    let mut player = rodio::Player::new().0;
+
     let mut leafblower = LeafBlower {
         position: [0.0, 0.0],
         angle: 0.0,
     };
     let mut display_leafblower = false;
+
+    let mut fade_out: Option<f32> = None;
 
     // We don't draw immediately, the configure will notify us when to first draw.
     loop {
@@ -52,6 +64,13 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
                     {
                         leafblower.position = wgpu.pointer_position;
                         display_leafblower = true;
+
+                        #[allow(unused_assignments)]
+                        {
+                            player = rodio::play(sink_handle.mixer(), cursor.clone()).unwrap();
+                            player.set_volume(1.0);
+                            fade_out = None;
+                        }
                     }
                 }
                 PointerEventKind::Release {
@@ -64,6 +83,7 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
                     {
                         leafblower.position = wgpu.pointer_position;
                         display_leafblower = false;
+                        fade_out = Some(args.leafblower_sfx_fadeout);
                     }
                 }
                 _ => {}
@@ -77,6 +97,16 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
             dt = 0.1
         };
         last_frame_time = now;
+
+        if let Some(ref mut remaining) = fade_out {
+            *remaining -= dt;
+            let vol = (*remaining / args.leafblower_sfx_fadeout).clamp(0.0, 1.0);
+            player.set_volume(vol);
+            if *remaining <= 0.0 {
+                player.stop();
+                fade_out = None;
+            }
+        }
 
         for conf in &mut confetti {
             conf.step(dt, wgpu.pointer_position, args.mouse_interactive)

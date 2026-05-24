@@ -31,6 +31,7 @@
             buildInputs = with pkgs; [
               libxkbcommon
               wayland
+              alsa-lib
             ];
 
             nativeBuildInputs = with pkgs; [

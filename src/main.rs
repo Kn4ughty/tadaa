@@ -53,6 +53,14 @@ struct Args {
     /// Enable leafblower
     #[arg(short, long, default_value_t = true)]
     leafblower: bool,
+
+    /// Enable sfx
+    #[arg(short, long, default_value_t = true)]
+    sound: bool,
+
+    /// How long should the sound fade out for in seconds
+    #[arg(long, default_value_t = 0.3)]
+    leafblower_sfx_fadeout: f32,
 }
 
 fn main() {
