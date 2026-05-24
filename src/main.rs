@@ -59,7 +59,7 @@ struct Args {
     sound: bool,
 
     /// How long should the sound fade out for in seconds
-    #[arg(long, default_value_t = 0.3)]
+    #[arg(long, default_value_t = 0.4)]
     leafblower_sfx_fadeout: f32,
 }
 

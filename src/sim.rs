@@ -2,6 +2,7 @@ use super::{MouseButton, Wgpu};
 use crate::Vertex;
 
 static BLOWER_SFX: &[u8] = include_bytes!("../assets/blower.ogg");
+static TADA_SFX: &[u8] = include_bytes!("../assets/tada.ogg");
 
 use std::time::{Duration, Instant};
 use wayland_client::EventQueue;
@@ -29,9 +30,16 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
         rodio::DeviceSinkBuilder::open_default_sink().expect("Open default audio stream");
     sink_handle.log_on_drop(false);
 
-    let cursor = std::io::Cursor::new(SOUND_BYTES);
+    let blower_cursor = std::io::Cursor::new(BLOWER_SFX);
+
     #[allow(unused)]
-    let mut player = rodio::Player::new().0;
+    let mut blower_player = rodio::Player::new().0;
+
+    #[allow(unused)]
+    let mut tada_player = rodio::Player::new().0;
+    let tada_player =
+        rodio::play(sink_handle.mixer(), std::io::Cursor::new(TADA_SFX)).expect("can play tada");
+    tada_player.play();
 
     let mut leafblower = LeafBlower {
         position: [0.0, 0.0],
@@ -67,8 +75,9 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
 
                         #[allow(unused_assignments)]
                         {
-                            player = rodio::play(sink_handle.mixer(), cursor.clone()).unwrap();
-                            player.set_volume(1.0);
+                            blower_player =
+                                rodio::play(sink_handle.mixer(), blower_cursor.clone()).unwrap();
+                            blower_player.set_volume(1.0);
                             fade_out = None;
                         }
                     }
@@ -101,9 +110,9 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
         if let Some(ref mut remaining) = fade_out {
             *remaining -= dt;
             let vol = (*remaining / args.leafblower_sfx_fadeout).clamp(0.0, 1.0);
-            player.set_volume(vol);
+            blower_player.set_volume(vol);
             if *remaining <= 0.0 {
-                player.stop();
+                blower_player.stop();
                 fade_out = None;
             }
         }
