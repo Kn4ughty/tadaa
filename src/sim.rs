@@ -1,4 +1,5 @@
-use super::Wgpu;
+use super::{MouseButton, Wgpu};
+use crate::Vertex;
 
 use std::time::{Duration, Instant};
 use wayland_client::EventQueue;
@@ -22,6 +23,12 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
     // Target 60 fps.
     let frame_delay = Duration::from_secs_f32(1.0 / 60.0);
 
+    let mut leafblower = LeafBlower {
+        position: [0.0, 0.0],
+        angle: 0.0,
+    };
+    let mut display_leafblower = false;
+
     // We don't draw immediately, the configure will notify us when to first draw.
     loop {
         event_queue.dispatch_pending(wgpu).unwrap();
@@ -29,6 +36,38 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
         if wgpu.exit || time_of_program_start.elapsed() > Duration::from_secs(8) {
             println!("Exiting..");
             break;
+        }
+
+        while let Some(pointer_event) = wgpu.pointer_click_queue.pop() {
+            use smithay_client_toolkit::seat::pointer::PointerEventKind;
+
+            match pointer_event.kind {
+                PointerEventKind::Press {
+                    time: _,
+                    button,
+                    serial: _,
+                } => {
+                    if let Ok(button) = MouseButton::try_from(button)
+                        && button == MouseButton::Right
+                    {
+                        leafblower.position = wgpu.pointer_position;
+                        display_leafblower = true;
+                    }
+                }
+                PointerEventKind::Release {
+                    time: _,
+                    button,
+                    serial: _,
+                } => {
+                    if let Ok(button) = MouseButton::try_from(button)
+                        && button == MouseButton::Right
+                    {
+                        leafblower.position = wgpu.pointer_position;
+                        display_leafblower = false;
+                    }
+                }
+                _ => {}
+            }
         }
 
         let now = Instant::now();
@@ -41,6 +80,10 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
 
         for conf in &mut confetti {
             conf.step(dt, wgpu.pointer_position, args.mouse_interactive)
+        }
+
+        if display_leafblower {
+            leafblower.step(dt, wgpu.pointer_position)
         }
 
         if args.indicate_mouse_pos {
@@ -63,6 +106,19 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
         for conf in &confetti {
             let offset: u16 = vertices.len().try_into().unwrap();
             let (verts, idx) = conf.to_quad();
+
+            for v in verts {
+                vertices.push(v);
+            }
+            for i in idx {
+                indices.push(i + offset);
+            }
+        }
+
+        if display_leafblower {
+            let offset: u16 = vertices.len().try_into().unwrap();
+            let aspect = wgpu.height as f32 / wgpu.width as f32;
+            let (verts, idx) = leafblower.to_quad(aspect);
 
             for v in verts {
                 vertices.push(v);
@@ -117,5 +173,73 @@ fn ensure_buffer(
     } else {
         // Buffer is big enough, just write
         queue.write_buffer(buffer, 0, data);
+    }
+}
+
+struct LeafBlower {
+    position: [f32; 2],
+    // Angle in radians
+    angle: f32,
+}
+
+impl LeafBlower {
+    pub fn step(&mut self, _dt: f32, cursor_pos: [f32; 2]) {
+        // angle self towards pointer
+        let dx = self.position[0] - cursor_pos[0];
+        let dy = self.position[1] - cursor_pos[1];
+
+        let angle = f32::atan2(dy, dx);
+        self.angle = angle;
+    }
+
+    /// Returns a quad of the current leafblower
+    pub fn to_quad(&self, aspect: f32) -> ([Vertex; 4], [u16; 6]) {
+        let w = 0.2;
+        let h = 0.1;
+
+        #[rustfmt::skip]
+        let uv_coords = [
+            [0.0, 0.0], // top left
+            [1.0, 0.0], // top right
+            [1.0, 1.0], // bottom right
+            [0.0, 1.0], // bottom left
+        ];
+
+        #[rustfmt::skip]
+        let local_verts = [
+            [-w,  h], // top left
+            [ w,  h], // top right
+            [ w, -h], // bottom right
+            [-w, -h], // bottom left
+        ];
+        let cos_r = f32::cos(self.angle);
+        let sin_r = f32::sin(self.angle);
+
+        let mut rotated_verts = [Vertex {
+            position: [0.0, 0.0],
+            colour: [0.0, 0.0, 0.0],
+            uv: [-1.0, -1.0],
+        }; 4];
+
+        for i in 0..4 {
+            let lx = local_verts[i][0];
+            let ly = local_verts[i][1];
+
+            // Standard 2d rotation matrix
+            // let rx = lx * cos_r - ly * sin_r;
+            // let ry = lx * sin_r + ly * cos_r;
+            let rx = lx * cos_r - (ly * aspect) * sin_r;
+            let ry = (lx * sin_r + (ly * aspect) * cos_r) / aspect;
+
+            rotated_verts[i] = Vertex {
+                position: [self.position[0] + rx, self.position[1] + ry],
+                colour: [0.0, 0.0, 0.0],
+                uv: uv_coords[i],
+            }
+        }
+
+        let indicies = [0, 3, 1, 1, 3, 2];
+
+        (rotated_verts, indicies)
     }
 }

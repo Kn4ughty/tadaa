@@ -17,3 +17,4 @@ pollster = "0.3.0"
 bytemuck = "1.25.0"
 rand = "0.10.1"
 clap = { version = "4.6.1", features = ["derive"] }
+image = "0.25.10"

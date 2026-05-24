@@ -112,6 +112,7 @@ impl ConfettiPiece {
         let mut rotated_verts = [Vertex {
             position: [0.0, 0.0],
             colour: self.colour,
+            uv: [0.0, 0.0],
         }; 4];
 
         for i in 0..4 {
@@ -125,6 +126,7 @@ impl ConfettiPiece {
             rotated_verts[i] = Vertex {
                 position: [self.position[0] + rx, self.position[1] + ry],
                 colour: self.colour,
+                uv: [-1.0, -1.0],
             }
         }
 
@@ -139,6 +141,7 @@ impl ConfettiPiece {
 pub struct Vertex {
     pub position: [f32; 2],
     pub colour: [f32; 3],
+    pub uv: [f32; 2],
 }
 
 impl Vertex {
@@ -158,6 +161,11 @@ impl Vertex {
                     offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
             ],
         }
