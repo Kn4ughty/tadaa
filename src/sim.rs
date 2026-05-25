@@ -14,7 +14,7 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
 
     let mut confetti = Vec::with_capacity(conf_count);
 
-    for _ in 0..100 {
+    for _ in 0..conf_count {
         // And repeat for other side
         confetti.push(ConfettiPiece::new_random([-1.0, -1.0], 1.0));
         confetti.push(ConfettiPiece::new_random([1.0, -1.0], -1.0));
