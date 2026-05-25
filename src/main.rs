@@ -4,13 +4,14 @@ use raw_window_handle::{
 };
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry,
-    delegate_seat,
+    delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer,
+    delegate_registry, delegate_seat,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     registry_handlers,
     seat::{
         Capability, SeatHandler, SeatState,
+        keyboard::KeyboardHandler,
         pointer::{PointerEvent, PointerEventKind, PointerHandler},
     },
     shell::{
@@ -22,7 +23,7 @@ use std::ptr::NonNull;
 use wayland_client::{
     Connection, Proxy, QueueHandle,
     globals::registry_queue_init,
-    protocol::{wl_output, wl_pointer, wl_seat, wl_surface},
+    protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_surface},
 };
 
 mod confetti;
@@ -111,15 +112,8 @@ fn main() {
     use smithay_client_toolkit::shell::wlr_layer::Anchor;
     layer_surface.set_anchor(Anchor::all());
     layer_surface.set_keyboard_interactivity(
-        smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity::None,
+        smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity::Exclusive,
     );
-
-    // Create the window for adapter selection
-    // let window = xdg_shell_state.create_window(surface, WindowDecorations::ServerDefault, &qh);
-    // window.set_title("wgpu wayland window");
-    // // GitHub does not let projects use the `org.github` domain but the `io.github` domain is fine.
-    // window.set_app_id("io.github.smithay.client-toolkit.WgpuExample");
-    // window.set_min_size(Some((256, 256)));
 
     layer_surface.commit();
 
@@ -295,6 +289,7 @@ fn main() {
         pointer: None,
         pointer_position: [0.0, 0.0],
         pointer_click_queue: Vec::new(),
+        keyboard: None,
     };
 
     sim::main_loop(args, &mut wgpu, &mut event_queue);
@@ -435,6 +430,7 @@ pub struct Wgpu {
 
     pointer: Option<wl_pointer::WlPointer>,
     pointer_position: [f32; 2],
+    keyboard: Option<wl_keyboard::WlKeyboard>,
     /// Will only contain PointerEventKind press
     pointer_click_queue: Vec<PointerEvent>,
 }
@@ -654,6 +650,13 @@ impl SeatHandler for Wgpu {
                 .expect("Failed to create pointer");
             self.pointer = Some(pointer);
         }
+        if capability == Capability::Keyboard && self.keyboard.is_none() {
+            let keyboard = self
+                .seat_state
+                .get_keyboard(qh, &seat, None)
+                .expect("failed to create keyboard");
+            self.keyboard = Some(keyboard)
+        }
     }
 
     fn remove_capability(
@@ -666,6 +669,9 @@ impl SeatHandler for Wgpu {
         if capability == Capability::Pointer && self.pointer.is_some() {
             // println!("Unset pointer capability");
             self.pointer.take().unwrap().release();
+        }
+        if capability == Capability::Keyboard && self.keyboard.is_some() {
+            self.keyboard.take().unwrap().release();
         }
     }
 
@@ -697,24 +703,92 @@ impl PointerHandler for Wgpu {
                 self.pointer_position[1] = -ssy;
             }
         }
-        // let mut presses = events
-        //     .iter()
-        //     .filter_map(|e| match e.kind {
-        //         PointerEventKind::Press {
-        //             time,
-        //             button,
-        //             serial,
-        //         } => Some(PointerEventKind::Press {
-        //             time,
-        //             button,
-        //             serial,
-        //         }),
-        //         _ => None,
-        //     })
-        //     .collect();
-
         let mut evs = events.to_vec();
         self.pointer_click_queue.append(&mut evs);
+    }
+}
+
+impl KeyboardHandler for Wgpu {
+    fn enter(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        surface: &wl_surface::WlSurface,
+        _serial: u32,
+        raw: &[u32],
+        keysyms: &[smithay_client_toolkit::seat::keyboard::Keysym],
+    ) {
+        if self.window.wl_surface() == surface {
+            for (rawk, sym) in raw.iter().zip(keysyms.iter()) {
+                println!("{rawk:?}, {sym:?}");
+            }
+        }
+    }
+    fn leave(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        surface: &wl_surface::WlSurface,
+        _serial: u32,
+    ) {
+        if self.window.wl_surface() == surface {
+            // todo
+        }
+    }
+
+    fn press_key(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _serial: u32,
+        event: smithay_client_toolkit::seat::keyboard::KeyEvent,
+    ) {
+        println!("press: {:?}", event);
+    }
+    fn release_key(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _serial: u32,
+        event: smithay_client_toolkit::seat::keyboard::KeyEvent,
+    ) {
+        println!("release: {:?}", event);
+        if event.keysym == smithay_client_toolkit::seat::keyboard::Keysym::Escape {
+            panic!("exit time")
+        }
+    }
+    fn update_keymap(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _keymap: smithay_client_toolkit::seat::keyboard::Keymap<'_>,
+    ) {
+        // todo
+    }
+    fn update_modifiers(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _serial: u32,
+        _modifiers: smithay_client_toolkit::seat::keyboard::Modifiers,
+        _layout: u32,
+    ) {
+        //
+    }
+    fn update_repeat_info(
+        &mut self,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        _keyboard: &wl_keyboard::WlKeyboard,
+        _info: smithay_client_toolkit::seat::keyboard::RepeatInfo,
+    ) {
+        //
     }
 }
 
@@ -723,7 +797,9 @@ delegate_compositor!(Wgpu);
 delegate_output!(Wgpu);
 
 delegate_layer!(Wgpu);
+
 delegate_pointer!(Wgpu);
+delegate_keyboard!(Wgpu);
 
 delegate_seat!(Wgpu);
 
