@@ -47,7 +47,13 @@ impl ConfettiPiece {
             angular_velocity,
         }
     }
-    pub fn step(&mut self, dt: f32, cursor_pos: [f32; 2], force_field: bool) {
+    pub fn step(
+        &mut self,
+        dt: f32,
+        cursor_pos: [f32; 2],
+        force_field: bool,
+        ground_collision: bool,
+    ) {
         self.time_alive += dt;
 
         self.rotation += self.angular_velocity * dt; // Drag this too?
@@ -79,10 +85,10 @@ impl ConfettiPiece {
         // Gravity
         self.velocity[1] -= 2.8 * dt;
 
-        let sway = if self.position[1] > -0.9 {
+        let sway = if self.position[1] > -0.9 || !ground_collision {
             f32::sin(self.time_alive * self.sway_speed) * 0.5
         } else {
-            // we are touching ground, or very close to
+            // we are touching ground, or very close to and ground_collision disabled
             let ground_drag = 2.0;
             self.velocity[0] -= self.velocity[0] * ground_drag * dt;
             0.0
@@ -91,7 +97,9 @@ impl ConfettiPiece {
         self.position[0] += (self.velocity[0] + sway) * dt;
         self.position[1] += self.velocity[1] * dt;
 
-        self.position[1] = self.position[1].max(-1.0 + self.dimensions[1]);
+        if ground_collision {
+            self.position[1] = self.position[1].max(-1.0 + self.dimensions[1]);
+        }
     }
 
     /// apply leafblower

@@ -118,7 +118,12 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
         }
 
         for conf in &mut confetti {
-            conf.step(dt, wgpu.pointer_position, args.mouse_interactive)
+            conf.step(
+                dt,
+                wgpu.pointer_position,
+                args.mouse_interactive,
+                args.mouse_interactive,
+            )
         }
 
         if display_leafblower {
