@@ -53,6 +53,7 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
 
     // We don't draw immediately, the configure will notify us when to first draw.
     loop {
+        let now = Instant::now();
         event_queue.dispatch_pending(wgpu).unwrap();
 
         if wgpu.exit || time_of_program_start.elapsed() > Duration::from_secs(8) {
@@ -101,7 +102,6 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
             }
         }
 
-        let now = Instant::now();
         let mut dt = now.duration_since(last_frame_time).as_secs_f32();
         // clamp dt to prevent massive jumps
         if dt > 0.1 {
@@ -185,6 +185,7 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
 
         wgpu.render();
         let elapsed = now.elapsed();
+        log::info!("ft: {elapsed:?}");
         if elapsed < frame_delay {
             std::thread::sleep(frame_delay - elapsed);
         }
