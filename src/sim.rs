@@ -1,3 +1,5 @@
+use log::info;
+
 use super::{MouseButton, Wgpu};
 use crate::Vertex;
 
@@ -54,7 +56,7 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
         event_queue.dispatch_pending(wgpu).unwrap();
 
         if wgpu.exit || time_of_program_start.elapsed() > Duration::from_secs(8) {
-            println!("Exiting..");
+            info!("Exiting..");
             break;
         }
 
@@ -118,12 +120,7 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
         }
 
         for conf in &mut confetti {
-            conf.step(
-                dt,
-                wgpu.pointer_position,
-                args.mouse_interactive,
-                args.mouse_interactive,
-            )
+            conf.step(dt, wgpu.pointer_position, args.leafblower, args.leafblower)
         }
 
         if display_leafblower {
@@ -136,20 +133,6 @@ pub fn main_loop(args: super::Args, wgpu: &mut Wgpu, event_queue: &mut EventQueu
                     std::f32::consts::PI / 12.0, // 15 deg cone
                 );
             }
-        }
-
-        if args.indicate_mouse_pos {
-            // println!("{:?}", wgpu.pointer_position);
-            confetti[0] = ConfettiPiece {
-                position: wgpu.pointer_position,
-                dimensions: [0.02, 0.02],
-                colour: [0.0, 0.0, 0.0],
-                velocity: [0.0, 0.0],
-                time_alive: 0.1,
-                sway_speed: 0.1,
-                rotation: 0.1,
-                angular_velocity: 0.1,
-            };
         }
 
         let mut vertices = Vec::new();

@@ -1,4 +1,5 @@
 use clap::Parser;
+use log::{info, trace};
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
 };
@@ -35,40 +36,41 @@ use crate::confetti::Vertex;
 
 const SHADER_SOURCE: &str = include_str!("shader.wgsl");
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Should the program interact with the mouse?
-    /// If no, mouse input is transparent, and all related options are ignored
-    #[arg(short, long)]
-    mouse_interactive: bool,
-
-    /// Draw a black indicator confetti of the current mouse position
-    #[arg(short, long)]
-    indicate_mouse_pos: bool,
-
-    /// Amount of confetti
-    #[arg(short, long, default_value_t = 100)]
-    confetti_count: u32,
-
-    /// Enable leafblower
-    #[arg(short, long, default_value_t = true)]
+    /// Enable leafblower. (exit early with escape)
+    ///
+    /// This makes the window input-opaque, as in inputs are consumed by the overlay.
+    #[arg(short, long, default_value_t = false)]
     leafblower: bool,
 
     /// Enable sfx
+    ///
+    /// This includes the opening "tadaa" and leafblower sounds
     #[arg(short, long, default_value_t = true)]
     sound: bool,
 
-    /// How long should the sound fade out for in seconds
+    /// Amount of confetti per side
+    ///
+    /// The index buffer is stored with u16's, and quads take 4 verts.
+    /// So the maximum amount of confetti is (2^16 / 4)/2 = 8192.
+    /// This is lowered to 8188 if the leafblower is enabled
+    #[arg(short, long, default_value_t = 100)]
+    confetti_count: u32,
+
+    /// How long should the leafblower sound fade out for in seconds
     #[arg(long, default_value_t = 0.4)]
     leafblower_sfx_fadeout: f32,
 }
 
 fn main() {
+    // This function is so messy. Should be cleaned up...
+
     env_logger::init();
     let args = Args::parse();
 
-    println!("{:#?}", args);
+    info!("Parsed args: {:#?}", args);
 
     let conn = Connection::connect_to_env().unwrap();
 
@@ -85,8 +87,9 @@ fn main() {
         smithay_client_toolkit::shell::wlr_layer::LayerShell::bind(&globals, &qh)
             .expect("Layer shell not available");
 
-    // let xdg_shell_state = XdgShell::bind(&globals, &qh).expect("xdg shell not available");
     let output_state = OutputState::new(&globals, &qh);
+
+    // Select first output
     let output = output_state
         .outputs()
         .next()
@@ -94,8 +97,9 @@ fn main() {
 
     let surface = compositor_state.create_surface(&qh);
 
-    if !args.mouse_interactive {
+    if !args.leafblower {
         // Create an empty input region, so all inputs are transparent
+        info!("Creating empty input region");
         let wl_region = smithay_client_toolkit::compositor::Region::new(&compositor_state)
             .expect("Cannot make region");
         surface.set_input_region(Some(wl_region.wl_region()));
@@ -111,9 +115,12 @@ fn main() {
 
     use smithay_client_toolkit::shell::wlr_layer::Anchor;
     layer_surface.set_anchor(Anchor::all());
-    layer_surface.set_keyboard_interactivity(
-        smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity::Exclusive,
-    );
+
+    if args.leafblower {
+        layer_surface.set_keyboard_interactivity(
+            smithay_client_toolkit::shell::wlr_layer::KeyboardInteractivity::Exclusive,
+        );
+    }
 
     layer_surface.commit();
 
@@ -261,6 +268,7 @@ fn main() {
     });
 
     let mut wgpu = Wgpu {
+        args: args.clone(),
         registry_state: RegistryState::new(&globals),
         seat_state: SeatState::new(&globals, &qh),
         output_state: OutputState::new(&globals, &qh),
@@ -433,6 +441,7 @@ pub struct Wgpu {
     keyboard: Option<wl_keyboard::WlKeyboard>,
     /// Will only contain PointerEventKind press
     pointer_click_queue: Vec<PointerEvent>,
+    args: Args,
 }
 
 impl Wgpu {
@@ -642,20 +651,23 @@ impl SeatHandler for Wgpu {
         seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
-        if capability == Capability::Pointer && self.pointer.is_none() {
-            // println!("Set pointer capability");
-            let pointer = self
-                .seat_state
-                .get_pointer(qh, &seat)
-                .expect("Failed to create pointer");
-            self.pointer = Some(pointer);
-        }
-        if capability == Capability::Keyboard && self.keyboard.is_none() {
-            let keyboard = self
-                .seat_state
-                .get_keyboard(qh, &seat, None)
-                .expect("failed to create keyboard");
-            self.keyboard = Some(keyboard)
+        if self.args.leafblower {
+            if capability == Capability::Pointer && self.pointer.is_none() {
+                info!("Setting pointer capability");
+                let pointer = self
+                    .seat_state
+                    .get_pointer(qh, &seat)
+                    .expect("Failed to create pointer");
+                self.pointer = Some(pointer);
+            }
+            if capability == Capability::Keyboard && self.keyboard.is_none() {
+                info!("Setting keyboard capability");
+                let keyboard = self
+                    .seat_state
+                    .get_keyboard(qh, &seat, None)
+                    .expect("failed to create keyboard");
+                self.keyboard = Some(keyboard)
+            }
         }
     }
 
@@ -667,10 +679,11 @@ impl SeatHandler for Wgpu {
         capability: Capability,
     ) {
         if capability == Capability::Pointer && self.pointer.is_some() {
-            // println!("Unset pointer capability");
+            info!("Unsetting pointer capability");
             self.pointer.take().unwrap().release();
         }
         if capability == Capability::Keyboard && self.keyboard.is_some() {
+            info!("Unsetting keyboard capability");
             self.keyboard.take().unwrap().release();
         }
     }
@@ -697,7 +710,6 @@ impl PointerHandler for Wgpu {
 
                 let ssx = ((ppx / self.width as f32) * 2.0) - 1.0;
                 let ssy = ((ppy / self.height as f32) * 2.0) - 1.0;
-                // println!("{:?}", ssx);
 
                 self.pointer_position[0] = ssx;
                 self.pointer_position[1] = -ssy;
@@ -721,7 +733,7 @@ impl KeyboardHandler for Wgpu {
     ) {
         if self.window.wl_surface() == surface {
             for (rawk, sym) in raw.iter().zip(keysyms.iter()) {
-                println!("{rawk:?}, {sym:?}");
+                trace!("enter: {rawk:?}, {sym:?}");
             }
         }
     }
@@ -746,7 +758,7 @@ impl KeyboardHandler for Wgpu {
         _serial: u32,
         event: smithay_client_toolkit::seat::keyboard::KeyEvent,
     ) {
-        println!("press: {:?}", event);
+        trace!("Keypress: {:?}", event);
     }
     fn release_key(
         &mut self,
@@ -756,8 +768,10 @@ impl KeyboardHandler for Wgpu {
         _serial: u32,
         event: smithay_client_toolkit::seat::keyboard::KeyEvent,
     ) {
-        println!("release: {:?}", event);
+        trace!("release: {:?}", event);
         if event.keysym == smithay_client_toolkit::seat::keyboard::Keysym::Escape {
+            // I really need to find a better way to exit the program.
+            // I should set a flag in self instead of panic
             panic!("exit time")
         }
     }
